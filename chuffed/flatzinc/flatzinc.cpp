@@ -244,7 +244,15 @@ namespace FlatZinc {
 						hadSearchAnnotation = true;
 					} catch (AST::TypeError& e) {
 						(void) e;
-						fprintf(stderr, "%% Type error in search annotation. Ignoring!\n");
+            try {
+              AST::Call *call = flatAnn[i]->getCall("assume");
+              AST::Array *vars = call->args->getArray();
+              for(int ii = 0; ii < vars->a.size(); ii++)
+                assumptions.push(bv[vars->a[ii]->getBoolVar()]);
+            } catch(AST::TypeError& e) {
+              (void) e;
+              fprintf(stderr, "%% Type error in search annotation. Ignoring!\n");
+            }
 					}
 				}
 			}

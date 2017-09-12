@@ -94,3 +94,6 @@ annotation smallest_largest;
 /** @group annotations.search.varsel Choose the variable with the largest smallest value in its domain */
 annotation largest_smallest;
 
+%------------------------------------------------------------------------------%
+% Additional annotation for assumption handling.
+annotation assume(array [int] of var bool);
