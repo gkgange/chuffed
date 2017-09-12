@@ -207,6 +207,7 @@ namespace FlatZinc {
 	// Users should add search annotation with (core vars, default, default) even if they know nothing
 
 	void FlatZincSpace::parseSolveAnn(AST::Array* ann) {
+    assumptions.clear();
 		bool hadSearchAnnotation = false;
 		if (ann) {
 			std::vector<AST::Node*> flatAnn;
