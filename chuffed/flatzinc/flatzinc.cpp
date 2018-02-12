@@ -24,6 +24,7 @@
 #include <chuffed/flatzinc/flatzinc.h>
 #include <chuffed/core/engine.h>
 #include <chuffed/branching/branching.h>
+#include <chuffed/branching/warm-start.h>
 
 
 using namespace std;
@@ -252,12 +253,22 @@ namespace FlatZinc {
                 assumptions.push(bv[vars->a[ii]->getBoolVar()]);
             } catch(AST::TypeError& e) {
               (void) e;
-              fprintf(stderr, "%% Type error in search annotation. Ignoring!\n");
+              try {
+                vec<Lit> decs;
+                AST::Call *call = flatAnn[i]->getCall("warm_start");
+                AST::Array* vars = call->args->getArray();
+                for(int ii = 0; ii < vars->a.size(); ii++)
+                  decs.push(bv[vars->a[ii]->getBoolVar()].getLit(1));
+                engine.branching->add(new WarmStartBrancher(decs));
+              } catch (AST::TypeError& e) {
+                (void) e;
+                fprintf(stderr, "%% Type error in search annotation. Ignoring!\n");
+              }
             }
 					}
 				}
 			}
-		} 
+		}
 		if (!hadSearchAnnotation) {
 			if (!so.vsids) {
 				so.vsids = true;
