@@ -78,4 +78,7 @@ void lex(vec<IntVar*>& x, vec<IntVar*>& y, bool strict);
 void var_sym_break(vec<IntVar*>& x);
 void val_sym_break(vec<IntVar*>& x, int l, int u);
 
+// value-precede.c
+void value_precede_int(int s, int t, vec<IntVar*>& x);
+void value_precede_seq(vec<IntVar*>& x);
 #endif

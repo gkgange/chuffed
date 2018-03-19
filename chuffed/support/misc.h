@@ -79,6 +79,7 @@ static inline double wallClockTime() {
   GetSystemTime(&system_time);
   SystemTimeToFileTime(&system_time, &file_time);
   ularge.LowPart = file_time.dwLowDateTime;
+
   ularge.HighPart = file_time.dwHighDateTime;
 
   long sec = (ularge.QuadPart - epoch) / 10000000L;
@@ -123,6 +124,15 @@ static T** new2d(int n, int m) {
 		a[i] = b + i * m;
 	}
 	return a;
+}
+
+template<class T, class U>
+  T conv(const U& x) {
+  static_assert(sizeof(T) == sizeof(U),
+		"Must bit-cast between values of equal size.");
+  T ret;
+  memcpy(&ret, &x, sizeof(U));
+  return ret;
 }
 
 #endif
