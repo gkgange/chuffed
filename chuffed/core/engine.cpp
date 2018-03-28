@@ -287,7 +287,7 @@ void optimize(IntVar* v, int t) {
 inline bool Engine::constrain() {
     best_sol = opt_var->getVal();
     opt_time = wallClockTime() - start_time - init_time;
-
+    
     sat.btToLevel(0);
     restartCount++;
     nodepath.resize(0);
@@ -298,7 +298,14 @@ inline bool Engine::constrain() {
       profilerConnector.restart("chuffed", restartCount);
     }
 #endif
-  
+    
+    if(!so.lazy) {
+      // Special-case, since get-lit breaks if lazy is false.
+      if(opt_type)
+        return opt_var->setMin(best_sol+1);
+      else
+        return opt_var->setMax(best_sol-1);
+    }
     if (so.parallel) {
         Lit p = opt_type ? opt_var->getLit(best_sol+1, 2) : opt_var->getLit(best_sol-1, 3);
         vec<Lit> ps;
