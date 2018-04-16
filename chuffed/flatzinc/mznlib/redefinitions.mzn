@@ -94,3 +94,5 @@ annotation smallest_largest;
 /** @group annotations.search.varsel Choose the variable with the largest smallest value in its domain */
 annotation largest_smallest;
 
+/** Choose the a random variable. */
+annotation random;
