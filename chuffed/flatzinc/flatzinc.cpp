@@ -193,7 +193,7 @@ namespace FlatZinc {
 
 	void flattenAnnotations(AST::Array* ann, std::vector<AST::Node*>& out) {
 		for (unsigned int i=0; i<ann->a.size(); i++) {
-			if (ann->a[i]->isCall("seq_search")) {
+			if (ann->a[i]->isCall("seq_search") || ann->a[i]->isCall("warm_start_array")) {
 				AST::Call* c = ann->a[i]->getCall();
 				if (c->args->isArray())
 					flattenAnnotations(c->args->getArray(), out);
