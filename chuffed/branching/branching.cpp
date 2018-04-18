@@ -71,9 +71,70 @@ DecInfo* BranchGroup::branch() {
 	return x[best_i]->branch();
 }
 
+class RandomBranch : public Branching {
+public:
+	vec<Branching*> x;
+	VarBranch var_branch;
+	// bool terminal;
+
+	// Persistent data
+	Tint cur;
+
+	RandomBranch()
+    : x(), cur(0) { }
+	RandomBranch(vec<Branching*>& _x)
+    : x(_x), cur(0) { }
+
+	bool finished() {
+    int sz = x.size();
+    if(cur < sz) {
+      if(!x[cur]->finished())
+        return false;
+      int idx = cur;
+      for(++idx; idx < sz; ++idx) {
+        if(!x[idx]->finished()) {
+          cur = idx;
+          return false;
+        }
+      }
+      cur = sz;
+    }
+    return true;
+  }
+
+	double getScore(VarBranch vb) { NEVER; }
+
+	DecInfo* branch() {
+    fprintf(stderr, "Called!\n");
+    int sz = x.size();
+    if(cur < sz) {
+      int idx = cur;
+      for(; idx < sz; ++idx) {
+        // Select a random variable.
+        std::swap(x[idx], x[idx + rand()%(x.size() - idx)]);
+        if(!x[idx]->finished()) {
+          cur = idx;
+          return x[idx]->branch();
+        }
+      }
+      cur = sz;
+    }
+    return nullptr;
+  }
+
+	void add(Branching *n) { x.push(n); }
+};  
 
 void branch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch) {
-	engine.branching->add(new BranchGroup(x, var_branch, true));
+  Branching* b;  
+  switch(var_branch) {
+    case VAR_RANDOM:
+      b = new RandomBranch(x);
+      break;
+    default:
+      b = new BranchGroup(x, var_branch, true);
+  }
+	engine.branching->add(b);
 	if (val_branch == VAL_DEFAULT) return;
 	PreferredVal p;
 	switch (val_branch) {

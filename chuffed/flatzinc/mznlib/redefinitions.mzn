@@ -97,3 +97,6 @@ annotation largest_smallest;
 %------------------------------------------------------------------------------%
 % Additional annotation for assumption handling.
 annotation assume(array [int] of var bool);
+
+/** Choose the a random variable. */
+annotation random;
