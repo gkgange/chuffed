@@ -19,6 +19,7 @@ class Problem;
 class Propagator;
 class PseudoProp;
 class TrailElem;
+class BoolView;
 
 //-----
 
@@ -95,6 +96,9 @@ public:
 	RESULT search(const std::string& problemLabel = "chuffed");
 	void solve(Problem *p, const std::string& problemLabel = "chuffed");
 
+  void set_assumptions(vec<BoolView>& xs);
+  void retrieve_assumption_nogood(vec<BoolView>& xs);
+   
 	// Stats
 	void printStats();
 	void checkMemoryUsage();
@@ -139,6 +143,16 @@ static inline void trailChange(T& v, const U u) {
 		engine.trail.push(TrailElem(pt+1, sizeof(T)));
 	}
 	v = u;
+}
+
+// Like trailChange, but don't actually update the value.
+template<class T>
+static inline void trailSave(T& v) {
+  int *pt = (int*) &v;
+  engine.trail.push(TrailElem(pt, sizeof(T)));
+  if (sizeof(T) == 8) {
+    engine.trail.push(TrailElem(pt+1, sizeof(T)));
+  }
 }
 
 

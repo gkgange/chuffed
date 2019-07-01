@@ -1,4 +1,4 @@
-# Chuffed, a lazy clause generation solver
+# Chuffed, a lazy clause generation solver 
 
 Geoffrey Chu, Peter J. Stuckey, Andreas Schutt, Thorsten Ehlers, Graeme Gange, Kathryn Francis
 
@@ -40,6 +40,15 @@ To build the C++ examples:
     cd build
     cmake ..
     cmake --build . --target examples
+
+### Assumption interface
+This branch adds FlatZinc hooks to the internal assumption handling. By adding an
+`assume(array [int] of var bool)` annotation to a solve item, the specified Booleans
+will be treated as assumptions.
+
+If the resulting problem is unsatisfiable (or the optimum is found), the solver will
+print a valid -- though not necessarily minimal -- nogood in terms of assumptions
+(and, for optimization instances, an objective bound).
 
 #### Integration with CP Profiler
 

@@ -24,6 +24,7 @@
 #include <chuffed/flatzinc/flatzinc.h>
 #include <chuffed/core/engine.h>
 #include <chuffed/branching/branching.h>
+#include <chuffed/branching/warm-start.h>
 
 
 using namespace std;
@@ -192,7 +193,7 @@ namespace FlatZinc {
 
 	void flattenAnnotations(AST::Array* ann, std::vector<AST::Node*>& out) {
 		for (unsigned int i=0; i<ann->a.size(); i++) {
-			if (ann->a[i]->isCall("seq_search")) {
+			if (ann->a[i]->isCall("seq_search") || ann->a[i]->isCall("warm_start_array")) {
 				AST::Call* c = ann->a[i]->getCall();
 				if (c->args->isArray())
 					flattenAnnotations(c->args->getArray(), out);
@@ -207,6 +208,7 @@ namespace FlatZinc {
 	// Users should add search annotation with (core vars, default, default) even if they know nothing
 
 	void FlatZincSpace::parseSolveAnn(AST::Array* ann) {
+    assumptions.clear();
 		bool hadSearchAnnotation = false;
 		if (ann) {
 			std::vector<AST::Node*> flatAnn;
@@ -244,11 +246,54 @@ namespace FlatZinc {
 						hadSearchAnnotation = true;
 					} catch (AST::TypeError& e) {
 						(void) e;
-						fprintf(stderr, "%% Type error in search annotation. Ignoring!\n");
+            try {
+              AST::Call *call = flatAnn[i]->getCall("assume");
+              AST::Array *vars = call->args->getArray();
+              for(int ii = 0; ii < vars->a.size(); ii++)
+                assumptions.push(bv[vars->a[ii]->getBoolVar()]);
+            } catch(AST::TypeError& e) {
+              (void) e;
+              try {
+                vec<Lit> decs;
+                AST::Call *call = flatAnn[i]->getCall("warm_start");
+                /*
+                AST::Array* vars = call->args->getArray();
+                for(int ii = 0; ii < vars->a.size(); ii++)
+                  decs.push(bv[vars->a[ii]->getBoolVar()].getLit(1));
+                */
+                AST::Array* args = call->getArgs(2);
+                AST::Array* vars = args->a[0]->getArray();
+                AST::Array* vals = args->a[1]->getArray();
+                if(vars->a.size() != vals->a.size()) {
+                  fprintf(stderr, "WARNING: length mismatch in warm_start annotation.\n");
+                }
+                int sz = min(vars->a.size(), vals->a.size());
+                for(int ii = 0; ii < sz; ii++) {
+                  IntVar* x(iv[vars->a[ii]->getIntVar()]);
+                  int k(vals->a[ii]->getInt());
+                  switch(x->getType()) {
+                    case INT_VAR_EL:
+                    case INT_VAR_SL:
+                      decs.push(x->getLit(k, 1));
+                      break;
+                    default:
+                      // Fallback. TODO: Do something nicer here.
+                      BoolView r = ::newBoolVar();
+                      int_rel_reif(x, IRT_EQ, k, r);
+                      decs.push(r.getLit(true));
+                      break;
+                  }
+                }
+                engine.branching->add(new WarmStartBrancher(decs));
+              } catch (AST::TypeError& e) {
+                (void) e;
+                fprintf(stderr, "%% Type error in search annotation. Ignoring!\n");
+              }
+            }
 					}
 				}
 			}
-		} 
+		}
 		if (!hadSearchAnnotation) {
 			if (!so.vsids) {
 				so.vsids = true;
