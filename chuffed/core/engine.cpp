@@ -17,6 +17,7 @@
 #include <chuffed/ldsb/ldsb.h>
 
 #include <chuffed/flatzinc/flatzinc.h>
+#include <chuffed/core/assume.h>
 
 #ifdef HAS_PROFILER
 #include "submodules/cp-profiler-integration/connector.hh"
@@ -42,7 +43,7 @@ Profiling::Connector profilerConnector(6565);
 
 std::map<IntVar*, string> intVarString;
 std::map<BoolView, string> boolVarString;
-        string mostRecentLabel;
+string mostRecentLabel;
 
 extern std::map<int,string> learntClauseString;
 extern std::ofstream learntStatsStream;
@@ -56,14 +57,14 @@ bool doProfiling() {
 
 void sendNode(Node& node) {
     if (so.print_nodes) {
-      if (!node_stream.is_open()) {
-        node_stream.open("node-log.csv");
-        node_stream << "type,id,restart,parent,alt,children,status,time,label,nogood,block,uses_objective,backjump_distance,decision_level,info\n";
-      }
-      node.print(node_stream);
-      if (so.debug) {
-          node.print(std::cerr);
-      }
+        if (!node_stream.is_open()) {
+            node_stream.open("node-log.csv");
+            node_stream << "type,id,restart,parent,alt,children,status,time,label,nogood,block,uses_objective,backjump_distance,decision_level,info\n";
+        } 
+        node.print(node_stream);
+        if (so.debug) {
+            node.print(std::cerr);
+        }
     }
     node.send();
 }
@@ -97,8 +98,6 @@ std::vector<int> altpath;
 // stale and meaningless.
 std::vector<int> decisionLevelTip;
 
-int restartCount;
-
 // When we rewind after a backjump, should we send the skipped nodes
 // to the profiler?
 enum RewindStyle {
@@ -129,10 +128,11 @@ std::string showVec(const vec<int>& v) {
 // Rewind nodepath and altpath after a backjump.
 void rewindPaths(
 #ifdef HAS_PROFILER
-                 Profiling::Connector& profilerConnector,
+    Profiling::Connector& profilerConnector,
 #endif
-                 int previousDecisionLevel, int newDecisionLevel, RewindStyle rewindStyle,
-                 long timestamp) {
+    int previousDecisionLevel, int newDecisionLevel, RewindStyle rewindStyle,
+    long timestamp
+) {
     int currentDecisionLevel;
     switch (rewindStyle) {
     case REWIND_OMIT_SKIPPED:
@@ -172,7 +172,7 @@ void rewindPaths(
             if (doProfiling()) {
               sendNode(profilerConnector
                        .createNode(nodeid, parent, myalt, 0, SKIPPED)
-                       .set_restart_id(restartCount)
+                       .set_restart_id(engine.restart_count)
                        .set_decision_level(currentDecisionLevel)
                        .set_time(timestamp));
             }
@@ -198,9 +198,9 @@ Engine::Engine()
     , opt_var(NULL)
     , best_sol(-1)
     , last_prop(NULL)
-      
-    , start_time(wallClockTime())
-    , opt_time(0)
+
+    , start_time(chuffed_clock::now())
+    , opt_time(duration::zero())
     , conflicts(0)
     , nodes(1)
     , propagations(0)
@@ -228,6 +228,7 @@ inline void Engine::newDecisionLevel() {
     sat.newDecisionLevel();
     if (so.mip) mip->newDecisionLevel();
     assert(dec_info.size() == decisionLevel());
+    peak_depth = max(peak_depth, decisionLevel());
 }
 
 inline void Engine::doFixPointStuff() {
@@ -274,7 +275,7 @@ inline void Engine::makeDecision(DecInfo& di, int alt) {
         sat.enqueue(toLit(di.val ^ alt));
     }
     if (so.ldsb && di.var && di.type == 1) ldsb.processDec(sat.trail.last()[0]);
-    //	if (opt_var && di.var == opt_var && ((IntVar*) di.var)->isFixed()) printf("objective = %d\n", ((IntVar*) di.var)->getVal());
+    //  if (opt_var && di.var == opt_var && ((IntVar*) di.var)->isFixed()) printf("objective = %d\n", ((IntVar*) di.var)->getVal());
 }
 
 void optimize(IntVar* v, int t) {
@@ -286,16 +287,16 @@ void optimize(IntVar* v, int t) {
 
 inline bool Engine::constrain() {
     best_sol = opt_var->getVal();
-    opt_time = wallClockTime() - start_time - init_time;
+    opt_time = std::chrono::duration_cast<duration>(chuffed_clock::now() - start_time) - init_time;
 
     sat.btToLevel(0);
-    restartCount++;
+    restart_count++;
     nodepath.resize(0);
     altpath.resize(0);
     /* nextnodeid = 0; */
 #ifdef HAS_PROFILER
     if (doProfiling()) {
-      profilerConnector.restart("chuffed", restartCount);
+      profilerConnector.restart("chuffed", restart_count);
     }
 #endif
   
@@ -308,12 +309,16 @@ inline bool Engine::constrain() {
         free(c);
     }
 
-    //	printf("opt_var = %d, opt_type = %d, best_sol = %d\n", opt_var->var_id, opt_type, best_sol);
-//	printf("%% opt_var min = %d, opt_var max = %d\n", opt_var->getMin(), opt_var->getMax());
+    //  printf("opt_var = %d, opt_type = %d, best_sol = %d\n", opt_var->var_id, opt_type, best_sol);
+//  printf("%% opt_var min = %d, opt_var max = %d\n", opt_var->getMin(), opt_var->getMax());
 
     Lit p = opt_type ? opt_var->getLit(best_sol+1, 2) : opt_var->getLit(best_sol-1, 3);
-    assumptions.clear();
-    assumptions.push(toInt(p));
+    // GKG: Preserves existing assumptions, but assumes we've reserved
+    // space at the end for the objective bound.
+    if(assumptions.size() == 0)
+      assumptions.push(toInt(p));
+    else
+      assumptions.last() = toInt(p);
 
     if (so.mip) mip->setObjective(best_sol);
 
@@ -411,7 +416,7 @@ void Engine::simplifyDB() {
     }
     cost += vars.size();
     cost *= 10;
-    //	printf("simp db cost: %d\n", cost);
+    //  printf("simp db cost: %d\n", cost);
     next_simp_db = propagations + cost;
 }
 
@@ -434,10 +439,35 @@ void Engine::blockCurrentSol() {
 }
 
 
-int Engine::getRestartLimit(int starts) {
-    //	return so.restart_base * ((int) pow(1.5, starts));
-    //	return so.restart_base;
-    return (((starts-1) & ~starts) + 1) * so.restart_base;
+unsigned int Engine::getRestartLimit(unsigned int i) {
+    switch (so.restart_type) {
+        case NONE:
+            if (i > 1) {
+                CHUFFED_ERROR("A restart occurred while using search without restarts");
+            }
+            return UINT_MAX;
+        case CONSTANT:
+            return so.restart_scale;
+        case LINEAR:
+            return i * so.restart_scale;
+        case LUBY:
+            while (true) {
+                unsigned int exp = 0U;
+                if (i != 1U) {
+                    while ( (i >> (++exp)) > 1U ) {}
+                }
+                if (i == (1U<<(exp+1))-1) {
+                    return static_cast<int>(1UL << exp) * so.restart_scale;
+                }
+                i=i-(1U<<exp)+1;
+            }
+        case GEOMETRIC:
+            return so.restart_scale * ((int) pow(so.restart_base, i));
+        default:
+            i = (i+1)/2;
+            return (((i-1) & ~i) + 1) * so.restart_scale;
+    }
+    NEVER;
 }
 
 void Engine::toggleVSIDS() {
@@ -459,20 +489,57 @@ void Engine::toggleVSIDS() {
     }
 }
 
+void Engine::set_assumptions(vec<BoolView>& xs) {
+  // Push the assumptions, then search as usual.
+  assumptions.clear();
+  for(int li = 0; li < xs.size(); li++)
+    assumptions.push(toInt(xs[li].getLit(true)));
+  // constrain will overwrite the last assumption;
+  // make sure there is a placeholder to overwrite.
+  if(opt_var)
+    assumptions.push(toInt(lit_True));
+}
+
+void Engine::retrieve_assumption_nogood(vec<BoolView>& xs) {
+  vec<Lit> out_nogood;
+  int assump_sz = sat.decisionLevel();
+  assert(assump_sz < engine.assumptions.size());
+
+  Lit q(toLit(engine.assumptions[assump_sz]));
+  assert(sat.value(q) == l_False);
+  
+  // Mark the available assumptions
+  for(int ii = 0; ii < assump_sz; ii++) {
+    assert(sat.value(toLit(engine.assumptions[ii])) == l_True);
+    sat.seen[engine.assumptions[ii]>>1] = 2;
+  }
+
+  // Collect the nogood.
+  // pushback_reason([](Lit p) { return sat.seen[var(p)]&2; }, q, out_nogood);
+  pushback_reason_lazy([](Lit p) { return sat.seen[var(p)]&2; }, q, out_nogood);
+  
+  for(int ii = 0; ii < out_nogood.size(); ii++)
+    xs.push(out_nogood[ii]);
+
+  // Finally, clear the marked assumptions
+  for(int ii = 0; ii < assump_sz; ii++)
+    sat.seen[engine.assumptions[ii]>>1] = 2;
+}
+
 RESULT Engine::search(const std::string& problemLabel) {
-    int starts = 0;
-    int nof_conflicts = so.restart_base;
-    int conflictC = 0;
+    unsigned int starts = 1;
+    unsigned int nof_conflicts = getRestartLimit(starts);
+    unsigned int conflictC = 0;
 
     if (so.print_variable_list) {
-      std::ofstream s;
-      s.open("variable-list");
-      for (auto const & p : intVarString) {
-        s << p.second << "\n";
-      }
-      for (auto const & p : boolVarString) {
-        s << p.second << "\n";
-      }
+        std::ofstream s;
+        s.open("variable-list");
+        for (auto const & p : intVarString) {
+            s << p.second << "\n";
+        }
+        for (auto const & p : boolVarString) {
+            s << p.second << "\n";
+        }
     }
 
     std::stringstream ss;
@@ -485,10 +552,10 @@ RESULT Engine::search(const std::string& problemLabel) {
     }
     std::string variableListString = ss.str();
 
-    restartCount = 0;
+    restart_count = 0;
 #ifdef HAS_PROFILER
     if (doProfiling()) {
-      profilerConnector.restart(problemLabel, restartCount, variableListString);
+        profilerConnector.restart(problemLabel, restart_count, variableListString);
     }
 #endif
   
@@ -533,7 +600,7 @@ RESULT Engine::search(const std::string& problemLabel) {
             std::cerr << "failure\n";
             std::cerr << "createNode(" << nodeid << ", " << parent << ", " << myalt << ", 0, NodeStatus::FAILED)\n";
             std::cerr << "label: " << mostRecentLabel << "\n";
-            std::cerr << "restart: " << restartCount << "\n";
+            std::cerr << "restart: " << restart_count << "\n";
 #endif
             /* c.createNode(nodeid, parent, myalt, 0, FAILED).set_label(mostRecentLabel).send(); */
             /* mostRecentLabel = ""; */
@@ -543,7 +610,7 @@ RESULT Engine::search(const std::string& problemLabel) {
         Conflict:
             conflicts++; conflictC++;
 
-            if (time(NULL) > so.time_out) {
+            if (so.time_out > duration(0) && chuffed_clock::now() > time_out) {
                 (*output_stream) << "% Time limit exceeded!\n";
                 return RES_UNK;
             }
@@ -551,7 +618,7 @@ RESULT Engine::search(const std::string& problemLabel) {
             if (decisionLevel() == 0) {
 #ifdef HAS_PROFILER
                 if (doProfiling()) {
-                    sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, FAILED).set_time(timeus).set_label(mostRecentLabel).set_restart_id(restartCount).set_decision_level(previousDecisionLevel));
+                    sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, FAILED).set_time(timeus).set_label(mostRecentLabel).set_restart_id(restart_count).set_decision_level(previousDecisionLevel));
                     mostRecentLabel = "";
                 }
 #endif
@@ -566,7 +633,6 @@ RESULT Engine::search(const std::string& problemLabel) {
 #ifdef HAS_PROFILER
                 if (doProfiling()) {
                     std::stringstream ss;
-                    //                    ss << "out_learnt (interpreted):";
                     for (int i = 0 ; i < sat.out_learnt.size() ; i++)
                         ss << " " << getLitString(toInt(sat.out_learnt[i]));
                     std::stringstream contribString;
@@ -603,19 +669,19 @@ RESULT Engine::search(const std::string& problemLabel) {
                     int numAssumptions = assumptions.size();
                     bool usesAssumptions = false;
                     for (int i = 0 ; i < sat.out_learnt_level.size() ; i++) {
-                      if (sat.out_learnt_level[i] < numAssumptions) {
-                        usesAssumptions = true;
-                      }
+                        if (sat.out_learnt_level[i] < numAssumptions) {
+                            usesAssumptions = true;
+                        }
                     }
 
                     if (so.debug) {
-                      std::cerr << "uses assumptions: " << usesAssumptions << "\n";
+                        std::cerr << "uses assumptions: " << usesAssumptions << "\n";
                     }
 
                     int backjumpDistance = previousDecisionLevel - decisionLevel();
 
                     if (doProfiling()) {
-                      sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, FAILED).set_time(timeus).set_label(mostRecentLabel).set_nogood(ss.str()).set_nogood_bld(bld).set_uses_assumptions(usesAssumptions).set_restart_id(restartCount).set_info(contribString.str()).set_backjump_distance(backjumpDistance).set_decision_level(previousDecisionLevel));
+                        sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, FAILED).set_time(timeus).set_label(mostRecentLabel).set_nogood(ss.str()).set_nogood_bld(bld).set_uses_assumptions(usesAssumptions).set_restart_id(restart_count).set_info(contribString.str()).set_backjump_distance(backjumpDistance).set_decision_level(previousDecisionLevel));
                     }
                     mostRecentLabel = "";
 #if DEBUG_VERBOSE
@@ -639,10 +705,10 @@ RESULT Engine::search(const std::string& problemLabel) {
                     altpath.push_back(1);
                 }
 #endif
-            }	else {
+            }   else {
 #ifdef HAS_PROFILER
                 if (doProfiling()) {
-                    sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, FAILED).set_time(timeus).set_label(mostRecentLabel).set_restart_id(restartCount).set_decision_level(previousDecisionLevel));
+                    sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, FAILED).set_time(timeus).set_label(mostRecentLabel).set_restart_id(restart_count).set_decision_level(previousDecisionLevel));
                     mostRecentLabel = "";
                 }
 #endif
@@ -658,20 +724,19 @@ RESULT Engine::search(const std::string& problemLabel) {
             }
 
             if (!so.vsids && !so.toggle_vsids &&  conflictC >= so.switch_to_vsids_after) {
-	    	if (so.restart_base >= 1000000000) so.restart_base = 100;
+            if (so.restart_scale >= 1000000000) so.restart_scale = 100;
                 if (so.verbosity >= 2)
-                  std::cerr << "restarting and switching to VSIDS\n";
+                    std::cerr << "restarting and switching to VSIDS\n";
                 sat.btToLevel(0);
-                restartCount++;
+                restart_count++;
                 nodepath.resize(0);
                 altpath.resize(0);
                 /* nextnodeid = 0; */
 #ifdef HAS_PROFILER
                 if (doProfiling()) {
-                  profilerConnector.restart("chuffed", restartCount);
+                    profilerConnector.restart("chuffed", restart_count);
                 }
 #endif
-
                 toggleVSIDS();
             }
 
@@ -679,25 +744,25 @@ RESULT Engine::search(const std::string& problemLabel) {
 
             if (conflictC >= nof_conflicts) {
                 if (so.verbosity >= 2)
-                  std::cerr << "restarting due to number of conflicts\n";
+                    std::cerr << "restarting due to number of conflicts\n";
                 starts++;
-                nof_conflicts += getRestartLimit((starts+1)/2);
+                nof_conflicts += getRestartLimit(starts);
                 sat.btToLevel(0);
-                restartCount++;
+                restart_count++;
                 nodepath.resize(0);
                 altpath.resize(0);
                 /* nextnodeid = 0; */
 #ifdef HAS_PROFILER
                 if (doProfiling()) {
-                  profilerConnector.restart("chuffed", restartCount);
+                    profilerConnector.restart("chuffed", restart_count);
                 }
 #endif
 
                 sat.confl = NULL;
-                if (so.lazy && so.toggle_vsids && (starts % 2 == 0)) toggleVSIDS();
+                if (so.lazy && so.toggle_vsids && (starts % 2 == 1)) toggleVSIDS();
                 continue;
             }
-			
+            
             if (decisionLevel() == 0) {
                 topLevelCleanUp();
                 if (opt_var && so.verbosity >= 3) {
@@ -706,7 +771,7 @@ RESULT Engine::search(const std::string& problemLabel) {
             }
 
             DecInfo *di = NULL;
-			
+            
             // Propagate assumptions
             while (decisionLevel() < assumptions.size()) {
                 int p = assumptions[decisionLevel()];
@@ -728,7 +793,7 @@ RESULT Engine::search(const std::string& problemLabel) {
             if (!di) {
                 solutions++;
                 if (std::stringstream* oss = dynamic_cast<std::stringstream*>(output_stream)) {
-                  oss->str("");
+                    oss->str("");
                 }
                 if (so.print_sol) {
                     problem->print(*output_stream);
@@ -741,34 +806,49 @@ RESULT Engine::search(const std::string& problemLabel) {
                 std::cerr << "label: " << mostRecentLabel << "\n";
 #endif
 
-                FlatZinc::FlatZincSpace *fzs = dynamic_cast<FlatZinc::FlatZincSpace*>(problem);
-                if (fzs != NULL) {
-                    std::stringstream s;
-                    /* s << "\""; */
-                    /* fzs->printStream(s); */
-                    fzs->printDomains(s);
-                    /* s << "\""; */
 #ifdef HAS_PROFILER
-                    if (doProfiling()) {
-                      sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, SOLVED)
-                               .set_time(timeus)
-                               .set_label(mostRecentLabel)
-                               .set_info(s.str())
-                               .set_decision_level(previousDecisionLevel)
-                               .set_restart_id(restartCount));
+                if (doProfiling()) {
+                    FlatZinc::FlatZincSpace *fzs = dynamic_cast<FlatZinc::FlatZincSpace*>(problem);
+                    if (fzs != NULL) {
+                        std::stringstream s;
+                        fzs->printDomains(s);
+                        sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, SOLVED)
+                            .set_time(timeus)
+                            .set_label(mostRecentLabel)
+                            .set_info(s.str())
+                            .set_decision_level(previousDecisionLevel)
+                            .set_restart_id(restart_count));
                     }
-#endif
-                } else {
-#ifdef HAS_PROFILER
-                    if (doProfiling()) {
-                      sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, SOLVED)
-                               .set_time(timeus)
-                               .set_label(mostRecentLabel)
-                               .set_decision_level(previousDecisionLevel)
-                               .set_restart_id(restartCount));
+                    else {
+                        sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, SOLVED)
+                            .set_time(timeus)
+                            .set_label(mostRecentLabel)
+                            .set_decision_level(previousDecisionLevel)
+                            .set_restart_id(restart_count));
                     }
-#endif
                 }
+                //FlatZinc::FlatZincSpace *fzs = dynamic_cast<FlatZinc::FlatZincSpace*>(problem);
+                //if (fzs != NULL) {
+                //    std::stringstream s;
+                //    fzs->printDomains(s);
+                //    if (doProfiling()) {
+                //        sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, SOLVED)
+                //               .set_time(timeus)
+                //               .set_label(mostRecentLabel)
+                //               .set_info(s.str())
+                //               .set_decision_level(previousDecisionLevel)
+                //               .set_restart_id(restart_count));
+                //    }
+                //} else {
+                //    if (doProfiling()) {
+                //        sendNode(profilerConnector.createNode(nodeid, parent, myalt, 0, SOLVED)
+                //               .set_time(timeus)
+                //               .set_label(mostRecentLabel)
+                //               .set_decision_level(previousDecisionLevel)
+                //               .set_restart_id(restart_count));
+                //    }
+                //}
+#endif
                                     
                 mostRecentLabel = "";
                 if (!opt_var) {
@@ -807,7 +887,7 @@ RESULT Engine::search(const std::string& problemLabel) {
                                           .set_label(mostRecentLabel)
                                           .set_info(info)
                                           .set_decision_level(previousDecisionLevel)
-                                          .set_restart_id(restartCount));
+                                          .set_restart_id(restart_count));
                 mostRecentLabel = "";
             }
 #endif
@@ -832,14 +912,14 @@ void Engine::solve(Problem *p, const std::string& problemLabel) {
 
     init();
 
-    so.time_out += time(NULL);
+    time_out = chuffed_clock::now() + so.time_out;
 
-    init_time = wallClockTime() - start_time;
+    init_time = std::chrono::duration_cast<duration>(chuffed_clock::now() - start_time);
     base_memory = memUsed();
 
 #ifdef HAS_PROFILER
     if (so.use_profiler)
-      profilerConnector.connect();
+        profilerConnector.connect();
 #endif
 
     /* if (so.debug) { */
@@ -873,16 +953,16 @@ void Engine::solve(Problem *p, const std::string& problemLabel) {
     }
 
     if (so.learnt_stats) {
-      for (int i = 0 ; i < sat.learnts.size() ; i++) {
-        Clause& c = *(sat.learnts[i]);
-        //        std::cerr << "clausescore," << c.clauseID() << ","
-        //        << c.rawActivity() << "\n";
-        int id = c.clauseID();
-        learntStatsStream << learntClauseString[id];
-        learntStatsStream << ",";
-        learntStatsStream << c.rawActivity();
-        learntStatsStream << "\n";
-      }
+        for (int i = 0 ; i < sat.learnts.size() ; i++) {
+            Clause& c = *(sat.learnts[i]);
+            //        std::cerr << "clausescore," << c.clauseID() << ","
+            //        << c.rawActivity() << "\n";
+            int id = c.clauseID();
+            learntStatsStream << learntClauseString[id];
+            learntStatsStream << ",";
+            learntStatsStream << c.rawActivity();
+            learntStatsStream << "\n";
+        }
     }
 
 #ifdef HAS_PROFILER

@@ -86,7 +86,7 @@ public:
 // Creates and adds a BranchGroup to the engine
 void branch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch);
 // Creates a BranchGroup
-BranchGroup* createBranch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch);
+Branching* createBranch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch);
 
 class PriorityBranchGroup : public BranchGroup {
 public:

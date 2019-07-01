@@ -12,15 +12,23 @@
 
 #define DEBUG_VERBOSE 0
 
+
+enum RestartType { CHUFFED_DEFAULT, NONE, CONSTANT, LINEAR, LUBY, GEOMETRIC};
+
 class Options {
 public:
 	// Solver options
 	int nof_solutions;               // Number of solutions to find
-	int time_out;                    // Amount of time before giving up
+	duration time_out;               // Amount of time before giving up
 	int rnd_seed;                    // Random seed
 	int verbosity;                   // Verbosity
 	bool print_sol;                  // Print solutions
-	int restart_base;                // How many conflicts before restart
+	unsigned int restart_scale;      // How many conflicts before restart
+	bool restart_scale_override;     // Restart scale set from CLI
+	double restart_base;             // How is the restart limit scaled (geometric)
+	bool restart_base_override;      // Restart base set from CLI
+	RestartType restart_type;        // How is the restart limit computed
+	bool restart_type_override;      // Restart type set from CLI
 
 	// Search options
 	bool toggle_vsids;               // Alternate between search ann/vsids

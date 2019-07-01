@@ -84,12 +84,65 @@ DecInfo* BranchGroup::branch() {
 	return x[best_i]->branch();
 }
 
-// Creates and adds a branching to the engine
+class RandomBranch : public Branching {
+public:
+	vec<Branching*> x;
+	VarBranch var_branch;
+	// bool terminal;
+
+	// Persistent data
+	Tint cur;
+
+	RandomBranch()
+    : x(), cur(0) { }
+	RandomBranch(vec<Branching*>& _x)
+    : x(_x), cur(0) { }
+
+	bool finished() {
+    int sz = x.size();
+    if(cur < sz) {
+      if(!x[cur]->finished())
+        return false;
+      int idx = cur;
+      for(++idx; idx < sz; ++idx) {
+        if(!x[idx]->finished()) {
+          cur = idx;
+          return false;
+        }
+      }
+      cur = sz;
+    }
+    return true;
+  }
+
+	double getScore(VarBranch vb) { NEVER; }
+
+	DecInfo* branch() {
+    fprintf(stderr, "Called!\n");
+    int sz = x.size();
+    if(cur < sz) {
+      int idx = cur;
+      for(; idx < sz; ++idx) {
+        // Select a random variable.
+        std::swap(x[idx], x[idx + rand()%(x.size() - idx)]);
+        if(!x[idx]->finished()) {
+          cur = idx;
+          return x[idx]->branch();
+        }
+      }
+      cur = sz;
+    }
+    return nullptr;
+  }
+
+	void add(Branching *n) { x.push(n); }
+};
+
 void branch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch) {
     engine.branching->add(createBranch(x, var_branch, val_branch));
 }
 // Creates a branching without adding to the engine
-BranchGroup* createBranch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch) {
+Branching* createBranch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch) {
 	if (val_branch != VAL_DEFAULT) {
         PreferredVal p;
         switch (val_branch) {
@@ -100,8 +153,12 @@ BranchGroup* createBranch(vec<Branching*> x, VarBranch var_branch, ValBranch val
             default: CHUFFED_ERROR("The value selection branching is not yet supported\n");
         }
         for (int i = 0; i < x.size(); i++) ((Var*) x[i])->setPreferredVal(p);
-    }
-	return new BranchGroup(x, var_branch, true);
+  }
+  if (var_branch == VAR_RANDOM) {
+    return new RandomBranch(x);
+  } else {
+    return new BranchGroup(x, var_branch, true);
+  }
 }
 
 

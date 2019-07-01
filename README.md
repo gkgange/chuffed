@@ -1,4 +1,4 @@
-# Chuffed, a lazy clause generation solver
+# Chuffed, a lazy clause generation solver 
 
 Geoffrey Chu, Peter J. Stuckey, Andreas Schutt, Thorsten Ehlers, Graeme Gange, Kathryn Francis
 
@@ -34,6 +34,11 @@ To build the `fzn-chuffed` executable:
     cmake ..
     cmake --build .
 
+To install `fzn-chuffed` run the following command in the build directory:
+`cmake --build . --target install`. The installation directory can be chosen by
+appending `-DCMAKE_INSTALL_PREFIX=$LOCATION` with the chosen location to the
+initial CMake command.
+
 To build the C++ examples:
 
     mkdir build
@@ -41,9 +46,18 @@ To build the C++ examples:
     cmake ..
     cmake --build . --target examples
 
-To build a debug or release version use the following command instead of `cmake ..`:
+To build a debug or release, chosen by default, version use the following command instead of `cmake ..`:
 
     cmake -DCMAKE_BUILD_TYPE=[Debug|Release] ..
+
+### Assumption interface
+This branch adds FlatZinc hooks to the internal assumption handling. By adding an
+`assume(array [int] of var bool)` annotation to a solve item, the specified Booleans
+will be treated as assumptions.
+
+If the resulting problem is unsatisfiable (or the optimum is found), the solver will
+print a valid -- though not necessarily minimal -- nogood in terms of assumptions
+(and, for optimization instances, an objective bound).
 
 #### Integration with CP Profiler
 
@@ -107,8 +121,8 @@ Although Chuffed implements lazy clause generation, which is cutting edge and
 rather complex, the FD parts of Chuffed are relatively simple. In fact, it is
 quite minimalistic. Chuffed only supports 3 different propagator priorities.
 Chuffed implements a number of global propagators (alldiff, inverse,
-minimum, table, regular, mdd, cumulative, disjunctive, circuit, difference). 
-It also only supports two kinds of integer variables. Small integer variables 
+minimum, table, regular, mdd, cumulative, disjunctive, circuit, difference).
+It also only supports two kinds of integer variables. Small integer variables
 for which the domain is represented by a byte string.
 And large integer variables for which the domain is represented only by its
 upper and lower bound (no holes allowed). All boolean variables and boolean
