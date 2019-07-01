@@ -50,12 +50,12 @@ namespace FlatZinc {
 
 		ConLevel ann2icl(AST::Node* ann) {
 			if (ann) {
-				if (ann->hasAtom("val")) return CL_VAL;
-				if (ann->hasAtom("bounds") ||
-						ann->hasAtom("boundsR") ||
-						ann->hasAtom("boundsD") ||
-						ann->hasAtom("boundsZ")) return CL_BND;
-				if (ann->hasAtom("domain"))	return CL_DOM;
+				if (ann && ann->hasAtom("val")) return CL_VAL;
+				if (ann && (ann->hasAtom("bounds") ||
+						    ann->hasAtom("boundsR") ||
+						    ann->hasAtom("boundsD") ||
+						    ann->hasAtom("boundsZ"))) return CL_BND;
+				if (ann && ann->hasAtom("domain"))	return CL_DOM;
 			}
 			return CL_DEF;
 		}
@@ -192,6 +192,42 @@ namespace FlatZinc {
 			p_int_CMP(IRT_LT, ce, ann);
 		}
 
+		void p_int_CMP_imp(IntRelType irt, const ConExpr& ce, AST::Node* ann) {
+			if (ce[2]->isBool()) {
+				if (ce[2]->getBool()) {
+					p_int_CMP(irt, ce, ann);
+				}
+				return;
+			}
+			if (ce[0]->isIntVar()) {
+				if (ce[1]->isIntVar()) {
+					int_rel_half_reif(getIntVar(ce[0]), irt, getIntVar(ce[1]), getBoolVar(ce[2]));
+				} else {
+					int_rel_half_reif(getIntVar(ce[0]), irt, ce[1]->getInt(), getBoolVar(ce[2]));
+				}
+			} else {
+				int_rel_half_reif(getIntVar(ce[1]), -irt, ce[0]->getInt(), getBoolVar(ce[2]));
+			}
+		}
+		void p_int_eq_imp(const ConExpr& ce, AST::Node* ann) {
+		  p_int_CMP_imp(IRT_EQ, ce, ann);
+		}
+		void p_int_ne_imp(const ConExpr& ce, AST::Node* ann) {
+		  p_int_CMP_imp(IRT_NE, ce, ann);
+		}
+		void p_int_ge_imp(const ConExpr& ce, AST::Node* ann) {
+		  p_int_CMP_imp(IRT_GE, ce, ann);
+		}
+		void p_int_gt_imp(const ConExpr& ce, AST::Node* ann) {
+		  p_int_CMP_imp(IRT_GT, ce, ann);
+		}
+		void p_int_le_imp(const ConExpr& ce, AST::Node* ann) {
+		  p_int_CMP_imp(IRT_LE, ce, ann);
+		}
+		void p_int_lt_imp(const ConExpr& ce, AST::Node* ann) {
+		  p_int_CMP_imp(IRT_LT, ce, ann);
+		}
+
 		void p_int_CMP_reif(IntRelType irt, const ConExpr& ce, AST::Node* ann) {
 			if (ce[2]->isBool()) {
 				if (ce[2]->getBool()) {
@@ -312,6 +348,10 @@ namespace FlatZinc {
 		}
 
 		// can specialise
+		void p_int_pow(const ConExpr& ce, AST::Node* ann) {
+			int_pow(getIntVar(ce[0]), getIntVar(ce[1]), getIntVar(ce[2]));    
+		}
+		// can specialise
 		void p_int_times(const ConExpr& ce, AST::Node* ann) {
 			int_times(getIntVar(ce[0]), getIntVar(ce[1]), getIntVar(ce[2]));    
 		}
@@ -336,6 +376,10 @@ namespace FlatZinc {
 		void p_int_negate(const ConExpr& ce, AST::Node* ann) {
 			int_negate(getIntVar(ce[0]), getIntVar(ce[1]));
 		}
+		void p_range_size_fzn(const ConExpr& ce, AST::Node* ann) {
+			range_size(getIntVar(ce[0]), getIntVar(ce[1]));
+		}
+
 
 		/* Boolean constraints */
 		void p_bool_CMP(int brt, const ConExpr& ce, AST::Node* ann, int sz) {
@@ -558,7 +602,7 @@ namespace FlatZinc {
 					ts.last().push(tuples[i*noOfVars+j]);
 				}
 			}
-			if (ann->hasAtom("mdd") || ann->hasCall("mdd"))
+			if (ann && (ann->hasAtom("mdd") || ann->hasCall("mdd")))
 				mdd_table(x, ts, getMDDOpts(ann));
       else
 				table(x, ts);
@@ -590,7 +634,7 @@ namespace FlatZinc {
 				for (unsigned int i = 0; i < sl->s.size(); i++) f.push(sl->s[i]);
 			}
             
-			if(ann->hasAtom("mdd"))
+			if(ann && ann->hasAtom("mdd"))
 				mdd_regular(iv, q, s, d, q0, f, true, getMDDOpts(ann));
       else
 				regular(iv, q, s, d, q0, f);
@@ -711,6 +755,11 @@ namespace FlatZinc {
 		void p_maximum(const ConExpr& ce, AST::Node* ann) {
 			vec<IntVar*> iv; arg2intvarargs(iv, ce[1]);
 			maximum(iv, getIntVar(ce[0]));
+		}
+
+		void p_bool_arg_max(const ConExpr& ce, AST::Node* ann) {
+			vec<BoolView> bv; arg2BoolVarArgs(bv, ce[0]);
+			bool_arg_max(bv, ce[1]->getInt(), getIntVar(ce[2]));
 		}
 
     void p_lex_less(const ConExpr& ce, AST::Node* ann) {
@@ -987,6 +1036,12 @@ namespace FlatZinc {
 				registry().add("int_gt", &p_int_gt);
 				registry().add("int_le", &p_int_le);
 				registry().add("int_lt", &p_int_lt);
+				registry().add("int_eq_imp", &p_int_eq_imp);
+				registry().add("int_ne_imp", &p_int_ne_imp);
+				registry().add("int_ge_imp", &p_int_ge_imp);
+				registry().add("int_gt_imp", &p_int_gt_imp);
+				registry().add("int_le_imp", &p_int_le_imp);
+				registry().add("int_lt_imp", &p_int_lt_imp);
 				registry().add("int_eq_reif", &p_int_eq_reif);
 				registry().add("int_ne_reif", &p_int_ne_reif);
 				registry().add("int_ge_reif", &p_int_ge_reif);
@@ -1007,6 +1062,7 @@ namespace FlatZinc {
 				registry().add("int_lin_gt_reif", &p_int_lin_gt_reif);
 				registry().add("int_plus", &p_int_plus);
 				registry().add("int_minus", &p_int_minus);
+				registry().add("int_pow", &p_int_pow);
 				registry().add("int_times", &p_int_times);
 				registry().add("int_div", &p_int_div);
 				registry().add("int_mod", &p_int_mod);
@@ -1014,6 +1070,7 @@ namespace FlatZinc {
 				registry().add("int_max", &p_int_max);
 				registry().add("int_abs", &p_abs);
 				registry().add("int_negate", &p_int_negate);
+				registry().add("range_size_fzn", &p_range_size_fzn);
 				registry().add("bool_and", &p_bool_and);
 				registry().add("bool_not", &p_bool_not);
 				registry().add("bool_or", &p_bool_or);
@@ -1058,6 +1115,7 @@ namespace FlatZinc {
                 registry().add("chuffed_subcircuit", &p_subcircuit);
 				registry().add("minimum_int", &p_minimum);
 				registry().add("maximum_int", &p_maximum);
+				registry().add("chuffed_maximum_arg_bool", &p_bool_arg_max);
 				registry().add("lex_less_int", &p_lex_less);
 				registry().add("lex_lesseq_int", &p_lex_lesseq);
 

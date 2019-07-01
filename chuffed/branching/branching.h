@@ -77,10 +77,31 @@ public:
 	double getScore(VarBranch vb);
 	DecInfo* branch();
 
-	void add(Branching *n) { x.push(n); }
+	virtual void add(Branching *n) { 
+        x.push(n); 
+    }
 
 };
 
+// Creates and adds a BranchGroup to the engine
 void branch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch);
+// Creates a BranchGroup
+Branching* createBranch(vec<Branching*> x, VarBranch var_branch, ValBranch val_branch);
+
+class PriorityBranchGroup : public BranchGroup {
+public:
+    vec<Branching*> annotations;
+
+	PriorityBranchGroup(vec<Branching*>& _x, VarBranch vb);
+
+	bool finished();
+	double getScore(VarBranch vb);
+	DecInfo* branch();
+
+	void add(Branching *n) { 
+        annotations.push(n);
+    }
+
+};
 
 #endif

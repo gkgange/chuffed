@@ -85,9 +85,11 @@ void int_rel(IntVar* x, IntRelType t, int c);
 // x rel y + c <-> r
 void int_rel_reif(IntVar* x, IntRelType t, IntVar* y, BoolView r, int c = 0);
 // x rel y + c <- r
-void int_rel_half_reif(IntVar* a, IntRelType t, IntVar* b, BoolView r, int c);
+void int_rel_half_reif(IntVar* a, IntRelType t, IntVar* b, BoolView r, int c = 0);
 // x rel c <-> r
 void int_rel_reif(IntVar* a, IntRelType t, int c, BoolView r);
+// x rel c <- r
+void int_rel_half_reif(IntVar* a, IntRelType t, int c, BoolView r);
 
 // linear.c
 
@@ -106,6 +108,8 @@ void int_linear_dom(vec<int>& a, vec<IntVar*>& x, int c);
 
 // y = |x|
 void int_abs(IntVar* x, IntVar* y);
+// z = x ^ y
+void int_pow(IntVar* x, IntVar* y, IntVar* z);
 // z = x * y
 void int_times(IntVar* x, IntVar* y, IntVar* z);
 // z = floor(x / y)
@@ -137,5 +141,10 @@ void array_var_bool_element(IntVar* x, vec<BoolView>& a, BoolView y, int offset 
 void array_var_int_element_bound(IntVar* x, vec<IntVar*>& a, IntVar* y, int offset = 0);
 void array_var_int_element_dom(IntVar* x, vec<IntVar*>& a, IntVar* y, int offset = 0);
 
+
+// domain.c
+
+// y = |ub(x) - lb(y) + 1|
+void range_size(IntVar* x, IntVar* s);
 
 #endif

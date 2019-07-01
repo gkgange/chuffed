@@ -9,11 +9,16 @@ Options so;
 
 Options::Options() :
 		nof_solutions(1)
-	, time_out(1800)
+	, time_out(0)
 	, rnd_seed(0)
 	, verbosity(0)
 	, print_sol(true)
-	, restart_base(1000000000)
+	, restart_scale(1000000000)
+    , restart_scale_override(true)
+    , restart_base(1.5)
+    , restart_base_override(true)
+    , restart_type(CHUFFED_DEFAULT)
+    , restart_type_override(true)
 
 	, toggle_vsids(false)
 	, branch_random(false)
@@ -242,10 +247,11 @@ void printHelp(int& argc, char**& argv, const std::string& fileExt) {
   "     An upper bound on the number of solutions (default " << def.nof_solutions << ").\n"
   "  -v, --verbose\n"
   "     Verbose mode (default " << (def.verbosity == 0 ? "off" : "on") << ").\n"
-  "  --time-out <n>\n"
-  "     Time out in seconds (default " << def.time_out << ").\n"
+  "  -t, --time-out <n>\n"
+  "     Time out in milliseconds (default " << def.time_out.count() << ", 0 = run indefinitely).\n"
   "  --rnd-seed <n>\n"
-  "     Set random seed (default " << def.rnd_seed << ").\n"
+  "     Set random seed (default " << def.rnd_seed << "). If 0 then the current time\n"
+  "     via std::time(0) is used.\n"
   "\n"
   "Search Options:\n"
   "  -f [on|off]\n"
@@ -277,8 +283,12 @@ void printLongHelp(int& argc, char**& argv, const std::string& fileExt) {
   "More Search Options:\n"
   "  --vsids [on|off], --no-vsids\n"
   "     Use activity-based search on the Boolean variables (default " << (def.vsids ? "on" : "off") << ").\n"
+  "  --restart [chuffed|none|constant|linear|luby|geometric]\n"
+  "     Restart sequence type (default chuffed).\n"
+  "  --restart-scale <n>\n"
+  "     Scale factor for restart sequence (default " << def.restart_scale << ").\n"
   "  --restart-base <n>\n"
-  "     Number of conflicts after which the search restarts (default " << def.restart_base << ").\n"
+  "     Base for geometric restart sequence (default " << def.restart_base << ").\n"
   "  --toggle-vsids [on|off], --no-toggle-vsids\n"
   "     Alternate search between user-specified and activity-based one when the\n"
   "     search is restarted. Starts by the user-specified search. Default restart\n"
@@ -288,7 +298,7 @@ void printLongHelp(int& argc, char**& argv, const std::string& fileExt) {
   "     activity-based one after a specified number of conflicts\n"
   "     (default " << def.switch_to_vsids_after << ").\n"
   "  --branch-random [on|off], --no-branch-random\n"
-  "     Random variable selection (default " << (def.branch_random ? "on" : "off") << ").\n"
+  "     Use random variable selection for tie breaking instead of input order (default " << (def.branch_random ? "on" : "off") << ").\n"
   "  --sat-polarity <n>\n"
   "     Selection of the polarity of Boolean variables\n"
   "     (0 = default, 1 = same, 2 = anti, 3 = random) (default " << def.sat_polarity << ").\n"
@@ -441,9 +451,13 @@ void parseOptions(int& argc, char**& argv, std::string* fileArg, const std::stri
     }
     if (cop.get("-n --n-of-solutions", &intBuffer)) {
       so.nof_solutions = intBuffer;
-    } else if (cop.get("--time-out", &intBuffer)) {
-      so.time_out = intBuffer;
-    } else if (cop.get("--rnd-seed", &intBuffer)) {
+    } else if (cop.get("-t --time-out", &intBuffer)) {
+      // TODO: Remove warning when appropriate
+      std::cerr << "WARNING: the --time-out flag has recently been changed."
+                << "The time-out is now provided in milliseconds instead of seconds"
+                << std::endl;
+      so.time_out = duration(intBuffer);
+    } else if (cop.get("-r --rnd-seed", &intBuffer)) {
       so.rnd_seed = intBuffer;
     } else if (cop.getBool("-v --verbose", boolBuffer)) {
       so.verbosity = boolBuffer;
@@ -451,8 +465,37 @@ void parseOptions(int& argc, char**& argv, std::string* fileArg, const std::stri
       so.verbosity = intBuffer;
     } else if (cop.getBool("--print-sol", boolBuffer)) {
       so.print_sol = boolBuffer;
-    } else if (cop.get("--restart-base", &intBuffer)) {
-      so.restart_base = intBuffer;
+    } else if (cop.get("--restart", &stringBuffer)) {
+      if (stringBuffer == "chuffed") {
+        so.restart_type = CHUFFED_DEFAULT;
+      } else if (stringBuffer == "none") {
+        so.restart_type = NONE;
+      } else if (stringBuffer == "constant") {
+        so.restart_type = CONSTANT;
+      } else if (stringBuffer == "linear") {
+        so.restart_type = LINEAR;
+      } else if (stringBuffer == "luby") {
+        so.restart_type = LUBY;
+      } else if (stringBuffer == "geometric") {
+        so.restart_type = GEOMETRIC;
+      } else {
+        std::cerr << argv[0] << ": Unknown restart strategy " << stringBuffer
+                  << ". Chuffed will use its default strategy.\n";
+      }
+      so.restart_type_override = false;
+    } else if (cop.get("--restart-scale", &intBuffer)) {
+      so.restart_scale = static_cast<unsigned int>(intBuffer);
+      so.restart_scale_override = false;
+    } else if (cop.get("--restart-base", &stringBuffer)) {
+      // TODO: Remove warning when appropriate
+      std::cerr << "WARNING: the --restart-base flag has recently been changed."
+                << "The old behaviour of \"restart base\" is now implemented by --restart-scale."
+                << std::endl;
+      so.restart_base = stod(stringBuffer);
+      if (so.restart_base < 1.0) {
+        CHUFFED_ERROR("Illegal restart base. Restart count will converge to zero.");
+      }
+      so.restart_base_override = false;
     } else if (cop.getBool("--toggle-vsids", boolBuffer)) {
       so.toggle_vsids = boolBuffer;
     } else if (cop.getBool("--branch-random", boolBuffer)) {
@@ -559,7 +602,7 @@ void parseOptions(int& argc, char**& argv, std::string* fileArg, const std::stri
       so.nof_solutions = 0;
     } else if (cop.get("-f")) {
       so.toggle_vsids = true;
-      so.restart_base = 100;
+      so.restart_scale = 100;
     } else if (cop.get("-p", &intBuffer)) {
       so.parallel = true;
       so.num_cores = intBuffer;
