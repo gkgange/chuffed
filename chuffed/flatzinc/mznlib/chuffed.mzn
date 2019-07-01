@@ -54,3 +54,7 @@ annotation smallest_largest;
 
 /** @group chuffed.annotations Choose the variable with the largest smallest value in its domain */
 annotation largest_smallest;
+
+%------------------------------------------------------------------------------%
+% Additional annotation for assumption handling.
+annotation assume(array [int] of var bool);
